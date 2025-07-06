@@ -1,0 +1,7 @@
+langchain==0.1.10
+chromadb==0.4.22
+openai==1.13.3
+python-dotenv==1.0.0
+fastapi==0.110.0
+uvicorn==0.28.0
+pandas==2.2.1
