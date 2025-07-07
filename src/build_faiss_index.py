@@ -3,23 +3,34 @@
 from langchain.vectorstores import FAISS
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
-import os
+import os, json
 
-# 示例歌词文档（你可以替换为自己的）
-docs = [
-    Document(page_content="阳光洒满你的笑脸，我的心跳随你蔓延...", metadata={"title": "夏日恋歌", "style": "流行"}),
-    Document(page_content="我在北漂的地铁上思考自由的代价...", metadata={"title": "城市孤影", "style": "说唱"}),
-    Document(page_content="一把吉他唱尽青春的年华...", metadata={"title": "青春岁月", "style": "民谣"}),
-]
+# 歌词数据源路径（JSONL 格式，每行一个 JSON）
+SOURCE_FILE = "lyrics_dataset.jsonl"
 
-# 嵌入模型（建议使用中文专用）
+# 读取语料库文件
+lyrics_docs = []
+with open(SOURCE_FILE, 'r', encoding='utf-8') as f:
+    for line in f:
+        data = json.loads(line)
+        content = data.get("lyrics", "")
+        metadata = {
+            "title": data.get("title", ""),
+            "mood": data.get("mood", ""),
+            "style": data.get("style", ""),
+            "language": data.get("language", ""),
+            "suno_prompt": data.get("suno_prompt", "")
+        }
+        lyrics_docs.append(Document(page_content=content, metadata=metadata))
+
+# 嵌入模型
 embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh-v1.5")
 
-# 构建索引
-db = FAISS.from_documents(docs, embedding_model)
+# 构建 FAISS 索引
+vectorstore = FAISS.from_documents(lyrics_docs, embedding_model)
 
-# 保存索引到目录
+# 保存索引
 os.makedirs("faiss_index", exist_ok=True)
-db.save_local("faiss_index")
+vectorstore.save_local("faiss_index")
 
-print("✅ FAISS 索引已保存到 faiss_index/")
+print("✅ 已从 lyrics_dataset.jsonl 构建并保存向量索引")
