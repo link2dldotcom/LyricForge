@@ -7,7 +7,7 @@ from pdfminer.high_level import extract_text
 import os
 
 # 输入 PDF 路径
-pdf_path = "src/sunoKnowledge2.pdf"  # 替换为你的 PDF 文件路径
+pdf_path = "sunoKnowledge2.pdf"  # 替换为你的 PDF 文件路径
 
 # 1. 提取 PDF 文本
 print("📖 正在提取 PDF 文本...")
