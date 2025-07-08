@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LyricForge - SUNO提示词生成器</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>SUNO提示词生成器</h1>
+        <form id="promptForm">
+            <div class="form-group">
+                <label for="mood">情绪:</label>
+                <input type="text" id="mood" name="mood" required placeholder="例如：欢快、悲伤、浪漫">
+            </div>
+            <div class="form-group">
+                <label for="style">风格:</label>
+                <input type="text" id="style" name="style" required placeholder="例如：流行、摇滚、古典">
+            </div>
+            <div class="form-group">
+                <label for="language">语言:</label>
+                <input type="text" id="language" name="language" required placeholder="例如：中文、英文">
+            </div>
+            <div class="form-group">
+                <label for="idea">主题创意:</label>
+                <textarea id="idea" name="idea" required placeholder="描述歌曲的主题或创意"></textarea>
+            </div>
+            <button type="submit" class="submit-btn">生成提示词</button>
+        </form>
+        <div class="result-section">
+            <h2>生成结果</h2>
+            <div id="result" class="result-content"></div>  <!-- 确保此元素ID为"result" -->
+            <div id="error" class="error-content"></div>   <!-- 确保此元素ID为"error" -->
+        </div>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>
+
+<!-- ### 3. 使用浏览器开发者工具调试
+1. 打开前端页面 <mcurl name="http://localhost:8000" url="http://localhost:8000"></mcurl>
+2. 按 **F12** 打开开发者工具
+3. 切换到 **Console** 标签，查看是否有错误信息
+4. 切换到 **Network** 标签，找到对 `/generate-suno-prompt` 的请求，检查：
+   - **Response** 选项卡中的实际返回数据
+   - **Status Code** 是否为 200
+
+### 4. 验证DOM元素是否存在
+确保 <mcfile name="index.html" path="d:\LyricForge\src\templates\index.html"></mcfile> 中包含结果显示元素：
+```html
+<div class="result-section">
+    <h2>生成结果</h2>
+    <div id="result" class="result-content"></div>
+    <div id="error" class="error-content"></div>  
+</div> -->
+```

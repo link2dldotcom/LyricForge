@@ -1,4 +1,7 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates  # 添加这行
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.chains import RetrievalQA
@@ -9,6 +12,7 @@ import os
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
 from langchain.retrievers import EnsembleRetriever
+from pathlib import Path  # 添加此行导入
 
 # 设置Hugging Face国内镜像（如果需要）
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
@@ -17,6 +21,11 @@ os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 # 初始化 FastAPI
 app = FastAPI()
 
+# 挂载静态文件
+static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+# 初始化模板引擎 - 修改这行
+templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 # 跨域配置（可根据需要调整）
 app.add_middleware(
     CORSMiddleware,
@@ -113,9 +122,11 @@ async def generate_prompt(request: PromptRequest):
     except Exception as e:
         return {"error": str(e)}
 
+# 添加首页路由
 @app.get("/")
-async def root():
-    return {"message": "LyricForge RAG API running."}
+async def read_root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+    return {"prompt": generated_prompt}  # 确保返回格式为 {"prompt": "生成的提示词"}
 
 if __name__ == "__main__":
     try:
