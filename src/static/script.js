@@ -35,7 +35,8 @@ document.getElementById('promptForm').addEventListener('submit', async function(
         if (response.ok) {
             // 尝试多种可能的字段名，适应不同的后端返回格式
             const result = data.prompt || data.result || data.response || JSON.stringify(data);
-            resultDiv.textContent = result;
+            // 将\n替换为<br>标签并使用innerHTML显示
+            resultDiv.innerHTML = result.replace(/\n/g, '<br>');
         } else {
             throw new Error(data.detail || data.error || '生成失败，请重试');
         }
