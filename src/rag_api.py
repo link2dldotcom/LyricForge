@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates  # 添加这行
+from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,11 +12,14 @@ import os
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
 from langchain.retrievers import EnsembleRetriever
-from pathlib import Path  # 添加此行导入
+from pathlib import Path
+from typing import List, Tuple, Any, Dict
+from langchain.agents import AgentExecutor, create_react_agent, Tool
+from langchain import hub
+from langchain_core.prompts import ChatPromptTemplate
 
-# 设置Hugging Face国内镜像（如果需要）
+# 设置Hugging Face国内镜像
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-# print("当前HF_ENDPOINT配置:", os.getenv("HF_ENDPOINT"))
 
 # 初始化 FastAPI
 app = FastAPI()
@@ -24,9 +27,9 @@ app = FastAPI()
 # 挂载静态文件
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
-# 初始化模板引擎 - 修改这行
+# 初始化模板引擎
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
-# 跨域配置（可根据需要调整）
+# 跨域配置
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -42,26 +45,11 @@ class PromptRequest(BaseModel):
     mood: str = ""
     style: str = ""
 
-# 初始化向量数据库（加载本地 FAISS 文件）
+# 初始化向量数据库
 embedding_model = HuggingFaceEmbeddings(
     model_name="BAAI/bge-small-zh-v1.5",
     model_kwargs={'device': 'cpu'},
-    encode_kwargs={'normalize_embeddings': True}
-)
-
-faiss_index_path = "./faiss_index"
-vectorstore = FAISS.load_local(faiss_index_path, embedding_model, allow_dangerous_deserialization=True)
-retriever = vectorstore.as_retriever()
-
-# 初始化本地 LLM（使用 deepseek-r1:7b）
-llm = ChatOllama(model="deepseek-r1:7b", base_url="http://localhost:11434")
-
-# 创建QA链
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=retriever,
-    return_source_documents=True
+    encode_kwargs={'normalize_embeddingsings': True}
 )
 
 # 创建带源信息的检索器
@@ -78,46 +66,108 @@ class SourceAddingRetriever(BaseRetriever):
             doc.metadata["source"] = self.source
         return documents
 
-# 加载歌词向量库
-vectorstore_lyrics = FAISS.load_local(
-    "./faiss_index", 
-    embedding_model, 
-    allow_dangerous_deserialization=True
-)
+# 加载向量库
+def load_vector_store(path: str, source_name: str) -> SourceAddingRetriever:
+    vectorstore = FAISS.load_local(
+        path, 
+        embedding_model, 
+        allow_dangerous_deserialization=True
+    )
+    return SourceAddingRetriever(
+        retriever=vectorstore.as_retriever(search_kwargs={"k": 3}),
+        source=source_name
+    )
 
-# 加载知识向量库
-vectorstore_knowledge = FAISS.load_local(
-    "./faiss_index_knowledge", 
-    embedding_model, 
-    allow_dangerous_deserialization=True
-)
+# 初始化检索器
+retriever_lyrics = load_vector_store("./faiss_index", "歌词库")
+retriever_knowledge = load_vector_store("./faiss_index_knowledge", "知识库")
 
-# 创建两个源检索器
-retriever_lyrics = SourceAddingRetriever(retriever=vectorstore_lyrics.as_retriever(), source="lyrics")
-retriever_knowledge = SourceAddingRetriever(retriever=vectorstore_knowledge.as_retriever(), source="knowledge")
+# 初始化本地 LLM
+llm = ChatOllama(model="deepseek-r1:7b", base_url="http://localhost:11434", temperature=0.2)
 
-# 合并检索器
-ensemble_retriever = EnsembleRetriever(
-    retrievers=[retriever_lyrics, retriever_knowledge],
-    weights=[0.5, 0.5]
-)
+# 定义检索工具函数
+def retrieve_lyrics(query: str) -> str:
+    """从歌词库中检索相关信息"""
+    docs = retriever_lyrics.get_relevant_documents(query)
+    return format_documents(docs)
 
-# 创建QA链时使用合并后的检索器
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=ensemble_retriever,
-    return_source_documents=True
-)
+def retrieve_knowledge(query: str) -> str:
+    """从音乐知识库中检索相关信息"""
+    docs = retriever_knowledge.get_relevant_documents(query)
+    return format_documents(docs)
+
+def format_documents(docs: List[Document]) -> str:
+    """格式化检索结果"""
+    return "\n\n".join([
+        f"来源: {doc.metadata.get('source', '未知')}\n内容: {doc.page_content}" 
+        for doc in docs
+    ])
+
+# 创建工具列表
+tools = [
+    Tool(
+        name="LyricsRetriever",
+        func=retrieve_lyrics,
+        description="当需要查找歌曲歌词、歌词风格或歌词结构时使用此工具"
+    ),
+    Tool(
+        name="MusicKnowledgeRetriever",
+        func=retrieve_knowledge,
+        description="当需要音乐理论、歌曲创作技巧或音乐风格信息时使用此工具"
+    )
+]
+
+# 创建Agent提示模板
+agent_prompt = ChatPromptTemplate.from_messages([
+    ("system", """
+    你是一位专业的音乐创作助手，负责帮助用户生成SUNO AI的歌曲提示词。
+    请根据用户请求，智能选择使用提供的工具获取相关信息，然后生成高质量的歌曲提示词。
+     
+     重要提示:
+     1. 提示词必须使用英文
+     2. 包含情绪、节奏、风格、歌词主题和伴奏描述
+     3. 格式示例: "Upbeat pop song with catchy melodies, about summer love. Energetic drums, bright synths. Lyrics: [阳光海滩的浪漫邂逅]"
+     
+     工具说明:
+     {tools}
+     
+     使用工具时请遵循以下格式:
+     Question: 用户的问题
+     Thought: 需要思考是否需要使用工具
+     Action: 工具名称，必须是[{tool_names}]中的一个
+     Action Input: 工具的输入参数
+     Observation: 工具返回的结果
+     ...(可以重复多次Thought/Action/Action Input/Observation)
+     Thought: 现在可以回答用户的问题了
+     Final Answer: 最终答案
+     
+     开始思考:
+     {agent_scratchpad}
+    """),
+    ("user", "{input}")
+])
+
+# 创建React Agent
+agent = create_react_agent(llm, tools, agent_prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
 
 @app.post("/generate-suno-prompt")
 async def generate_prompt(request: PromptRequest):
     try:
-        user_query = f"我想写一首{request.mood}的{request.style}风格歌曲，语言是{request.language}，主题是：{request.idea}。请生成一段英文的 SUNO 提示词，用于歌曲生成，包括情绪、节奏、风格、歌词、伴奏。"
-        result = qa_chain.invoke({"query": user_query})  # 使用 invoke 方法
+        user_query = (
+            f"用户请求: 创作一首{request.mood}情绪的{request.style}风格歌曲\n"
+            f"语言: {request.language}\n"
+            f"主题: {request.idea}\n"
+            "请生成符合SUNO AI要求的英文提示词"
+        )
+        
+        # 使用Agent执行任务
+        result = agent_executor.invoke({"input": user_query})
+        
         return {
             "input": user_query,
-            "suno_prompt": result["result"]  # 返回 result 键的内容
+            "suno_prompt": result["output"],
+            "agent_steps": result.get("intermediate_steps", [])
         }
     except Exception as e:
         return {"error": str(e)}
@@ -126,7 +176,6 @@ async def generate_prompt(request: PromptRequest):
 @app.get("/")
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-    return {"prompt": generated_prompt}  # 确保返回格式为 {"prompt": "生成的提示词"}
 
 if __name__ == "__main__":
     try:

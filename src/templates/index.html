@@ -26,6 +26,20 @@
                 <label for="idea">主题创意:</label>
                 <textarea id="idea" name="idea" required placeholder="描述歌曲的主题或创意"></textarea>
             </div>
+            
+            <!-- 添加工具选择 -->
+            <div class="form-group">
+                <label>选择工具:</label>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" name="tools" value="lyrics_retriever"> 歌词检索工具
+                    </label>
+                    <label>
+                        <input type="checkbox" name="tools" value="music_knowledge_retriever"> 音乐知识检索工具
+                    </label>
+                </div>
+            </div>
+            
             <button type="submit" class="submit-btn">生成提示词</button>
         </form>
         <div class="result-section">

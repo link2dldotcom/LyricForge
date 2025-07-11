@@ -16,7 +16,10 @@ document.getElementById('promptForm').addEventListener('submit', async function(
             mood: document.getElementById('mood').value,
             style: document.getElementById('style').value,
             language: document.getElementById('language').value,
-            idea: document.getElementById('idea').value
+            idea: document.getElementById('idea').value,
+            // 收集选中的工具
+            tools: Array.from(document.querySelectorAll('input[name="tools"]:checked'))
+                .map(checkbox => checkbox.value)
         };
 
         // 发送请求到后端API
