@@ -40,10 +40,14 @@ app.add_middleware(
 
 # 请求体结构
 class PromptRequest(BaseModel):
+    mood: str
+    style: str
+    language: str
     idea: str
-    language: str = "zh"
-    mood: str = ""
-    style: str = ""
+
+# 新增SUNO知识请求模型
+class SunoKnowledgeRequest(BaseModel):
+    query: str
 
 # 初始化向量数据库
 embedding_model = HuggingFaceEmbeddings(
@@ -81,6 +85,7 @@ def load_vector_store(path: str, source_name: str) -> SourceAddingRetriever:
 # 初始化检索器
 retriever_lyrics = load_vector_store("./faiss_index", "歌词库")
 retriever_knowledge = load_vector_store("./faiss_index_knowledge", "知识库")
+retriever_suno = load_vector_store("./faiss_index_knowledge", "SUNO知识库")  # 修正路径为正确的知识库目录
 
 # 初始化本地 LLM
 llm = ChatOllama(model="deepseek-r1:7b", base_url="http://localhost:11434", temperature=0.2)
@@ -94,6 +99,12 @@ def retrieve_lyrics(query: str) -> str:
 def retrieve_knowledge(query: str) -> str:
     """从音乐知识库中检索相关信息"""
     docs = retriever_knowledge.get_relevant_documents(query)
+    return format_documents(docs)
+
+# 新增SUNO知识检索函数
+def retrieve_suno(query: str) -> str:
+    """从SUNO知识库中检索相关信息"""
+    docs = retriever_suno.get_relevant_documents(query)
     return format_documents(docs)
 
 def format_documents(docs: List[Document]) -> str:
@@ -114,6 +125,12 @@ tools = [
         name="MusicKnowledgeRetriever",
         func=retrieve_knowledge,
         description="当需要音乐理论、歌曲创作技巧或音乐风格信息时使用此工具"
+    ),
+    # 新增SUNO知识检索工具
+    Tool(
+        name="SUNOKnowledgeRetriever",
+        func=retrieve_suno,
+        description="当需要学习SUNO AI使用方法、参数设置、提示词生成技巧或音乐风格配置时使用此工具"
     )
 ]
 
@@ -154,6 +171,7 @@ agent_prompt = ChatPromptTemplate.from_messages([
 工具名称列表（请原样使用）:
 - LyricsRetriever
 - MusicKnowledgeRetriever
+- SUNOKnowledgeRetriever  # 添加此行
 
 {agent_scratchpad}
     """),
@@ -174,7 +192,7 @@ agent_executor = AgentExecutor(
 )
 
 @app.post("/generate-suno-prompt")
-async def generate_prompt(request: PromptRequest):
+async def generate_suno_prompt(request: PromptRequest):
     try:
         # 构建更简洁的用户查询
         user_query = (
@@ -252,6 +270,19 @@ async def generate_direct_prompt(request: PromptRequest) -> str:
 @app.get("/")
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+# 新增SUNO知识学习端点
+@app.post("/learn-suno-knowledge")
+async def learn_suno_knowledge(request: SunoKnowledgeRequest):
+    try:
+        # 直接检索SUNO知识
+        knowledge = retrieve_suno(request.query)
+        return {
+            "query": request.query,
+            "knowledge": knowledge
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     try:
