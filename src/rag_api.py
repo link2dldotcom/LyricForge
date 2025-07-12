@@ -71,21 +71,21 @@ class SourceAddingRetriever(BaseRetriever):
         return documents
 
 # 加载向量库
-def load_vector_store(path: str, source_name: str) -> SourceAddingRetriever:
+def load_vector_store(path: str, source_name: str, k: int = 3) -> SourceAddingRetriever:
     vectorstore = FAISS.load_local(
         path, 
         embedding_model, 
         allow_dangerous_deserialization=True
     )
     return SourceAddingRetriever(
-        retriever=vectorstore.as_retriever(search_kwargs={"k": 3}),
+        retriever=vectorstore.as_retriever(search_kwargs={"k": k}),  # 使用k参数
         source=source_name
     )
 
 # 初始化检索器
 retriever_lyrics = load_vector_store("./faiss_index", "歌词库")
 retriever_knowledge = load_vector_store("./faiss_index_knowledge", "知识库")
-retriever_suno = load_vector_store("./faiss_index_knowledge", "SUNO知识库")  # 修正路径为正确的知识库目录
+retriever_suno = load_vector_store("./faiss_index_knowledge", "SUNO知识库", k=15)  # 增加k值以返回更多文档
 
 # 初始化本地 LLM
 llm = ChatOllama(model="deepseek-r1:7b", base_url="http://localhost:11434", temperature=0.2)
@@ -270,7 +270,9 @@ async def generate_direct_prompt(request: PromptRequest) -> str:
 @app.get("/")
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-
+@app.get("/suno-knowledge")
+async def suno_knowledge_page():
+    return templates.TemplateResponse("suno_knowledge.html", {"request": Request(scope={"type": "http"})})
 # 新增SUNO知识学习端点
 @app.post("/learn-suno-knowledge")
 async def learn_suno_knowledge(request: SunoKnowledgeRequest):

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SUNO知识学习中心</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SUNO AI 知识学习中心</h1>
+            <nav>
+                <a href="/">首页</a> | <a href="/suno-knowledge" class="active">SUNO知识学习</a>
+            </nav>
+        </header>
+
+        <main class="suno-knowledge-container">
+            <section class="query-section">
+                <h2>查询SUNO知识</h2>
+                <div class="input-group">
+                    <input type="text" id="suno-query" placeholder="请输入您想了解的SUNO相关问题..." />
+                    <button id="query-btn">搜索</button>
+                </div>
+                <div class="advanced-options">
+                    <label for="result-count">结果数量:</label>
+                    <select id="result-count">
+                        <option value="3">3条</option>
+                        <option value="5" selected>5条</option>
+                        <option value="10">10条</option>
+                    </select>
+                </div>
+            </section>
+
+            <section class="results-section">
+                <h2>搜索结果</h2>
+                <div id="loading" class="loading" style="display: none;">加载中...</div>
+                <div id="results" class="results"></div>
+                <div id="error" class="error" style="display: none;"></div>
+            </section>
+        </main>
+
+        <footer>
+            <p>LyricForge © 2023 - SUNO AI 知识学习系统</p>
+        </footer>
+    </div>
+
+    <script src="/static/script.js"></script>
+    <script>
+        // SUNO知识学习页面专用脚本
+        document.addEventListener('DOMContentLoaded', () => {
+            const queryInput = document.getElementById('suno-query');
+            const queryBtn = document.getElementById('query-btn');
+            const resultCount = document.getElementById('result-count');
+            const resultsDiv = document.getElementById('results');
+            const loadingDiv = document.getElementById('loading');
+            const errorDiv = document.getElementById('error');
+
+            // 处理搜索请求
+            async function handleSearch() {
+                const query = queryInput.value.trim();
+                if (!query) {
+                    alert('请输入查询内容');
+                    return;
+                }
+
+                // 显示加载状态
+                loadingDiv.style.display = 'block';
+                resultsDiv.style.display = 'none';
+                errorDiv.style.display = 'none';
+
+                try {
+                    // 调用SUNO知识学习API
+                    const response = await fetch('/learn-suno-knowledge', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            query: query,
+                            count: resultCount.value
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
+                    // 显示结果
+                    displayResults(data);
+                } catch (error) {
+                    errorDiv.textContent = `查询失败: ${error.message}`;
+                    errorDiv.style.display = 'block';
+                } finally {
+                    loadingDiv.style.display = 'none';
+                }
+            }
+
+            // 显示搜索结果
+            function displayResults(data) {
+                resultsDiv.innerHTML = '';
+                resultsDiv.style.display = 'block';
+
+                // 如果返回的是数组，则遍历显示每个结果
+                if (Array.isArray(data.knowledge)) {
+                    data.knowledge.forEach((item, index) => {
+                        const resultItem = document.createElement('div');
+                        resultItem.className = 'result-item';
+                        resultItem.innerHTML = `
+                            <h3>结果 ${index + 1}</h3>
+                            <div class="knowledge-content">${formatKnowledge(item)}</div>
+                        `;
+                        resultsDiv.appendChild(resultItem);
+                    });
+                } else {
+                    // 保持原有的单结果显示方式
+                    const resultItem = document.createElement('div');
+                    resultItem.className = 'result-item';
+                    resultItem.innerHTML = `
+                        <h3>查询: ${escapeHtml(data.query)}</h3>
+                        <div class="knowledge-content">${formatKnowledge(data.knowledge)}</div>
+                    `;
+                    resultsDiv.appendChild(resultItem);
+                }
+            }
+
+            // 辅助函数：转义HTML
+            function escapeHtml(unsafe) {
+                return unsafe
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+            }
+
+            // 辅助函数：格式化知识内容
+            function formatKnowledge(knowledge) {
+                // 将换行符转换为<br>
+                return escapeHtml(knowledge).replace(/\n/g, '<br>');
+            }
+
+            // 添加搜索按钮点击事件监听
+            queryBtn.addEventListener('click', handleSearch);
+            
+            // 添加回车键触发搜索
+            queryInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    handleSearch();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
