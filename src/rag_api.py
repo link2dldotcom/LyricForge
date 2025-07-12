@@ -49,7 +49,7 @@ class PromptRequest(BaseModel):
 embedding_model = HuggingFaceEmbeddings(
     model_name="BAAI/bge-small-zh-v1.5",
     model_kwargs={'device': 'cpu'},
-    encode_kwargs={'normalize_embeddingsings': True}
+    encode_kwargs={'normalize_embeddings': True}
 )
 
 # 创建带源信息的检索器
@@ -117,60 +117,136 @@ tools = [
     )
 ]
 
-# 创建Agent提示模板
+# 创建Agent提示模板 - 修复工具调用格式问题
 agent_prompt = ChatPromptTemplate.from_messages([
     ("system", """
-    你是一位专业的音乐创作助手，负责帮助用户生成SUNO AI的歌曲提示词。
-    请根据用户请求，智能选择使用提供的工具获取相关信息，然后生成高质量的歌曲提示词。
-     
-     重要提示:
-     1. 提示词必须使用英文
-     2. 包含情绪、节奏、风格、歌词主题和伴奏描述
-     3. 格式示例: "Upbeat pop song with catchy melodies, about summer love. Energetic drums, bright synths. Lyrics: [阳光海滩的浪漫邂逅]"
-     
-     工具说明:
-     {tools}
-     
-     使用工具时请遵循以下格式:
-     Question: 用户的问题
-     Thought: 需要思考是否需要使用工具
-     Action: 工具名称，必须是[{tool_names}]中的一个
-     Action Input: 工具的输入参数
-     Observation: 工具返回的结果
-     ...(可以重复多次Thought/Action/Action Input/Observation)
-     Thought: 现在可以回答用户的问题了
-     Final Answer: 最终答案
-     
-     开始思考:
-     {agent_scratchpad}
+你是一位专业的音乐创作助手，负责帮助用户生成SUNO AI的歌曲提示词。
+请严格按照以下规则操作：
+
+1. 最多思考两次（Thought/Action步骤最多两次）
+2. 在第二次思考后必须生成最终答案
+3. 如果第一次思考后已经足够，可以直接生成最终答案
+
+重要提示:
+1. 提示词必须使用英文
+2. 包含情绪、节奏、风格、歌词主题和伴奏描述
+3. 格式示例: "positive, happy, uplifting, energetic, upbeat, driving, paceful, metal but dance-friendly, Upbeat pop song with catchy melodies, Energetic drums, bright synths. Lyrics: [阳光海滩的浪漫邂逅]"
+
+可用工具:
+{tools}
+
+可用工具名称列表:
+{tool_names}  # 必须包含此行以列出可用工具名称
+
+工具调用格式 - 请严格遵守:
+1. 思考(Thought)后必须立即跟随Action和Action Input
+2. Action行必须只包含工具名称，不能添加任何符号、括号或解释
+   - 正确格式: "Action: MusicKnowledgeRetriever"
+   - 错误格式: "Action: [MusicKnowledgeRetriever]"
+   - 错误格式: "Action: MusicKnowledgeRetriever, 必须是[...]中的一个"
+3. Action Input行必须只包含纯文本查询
+   - 正确格式: "Action Input: 2025年流行音乐风格"
+   - 错误格式: "Action Input: [MusicKnowledgeRetriever] 2025流行风格"
+4. 决定回答时必须使用终止标志:
+   Thought: 现在可以回答用户的问题了（必须包含此句作为终止标志）
+   Final Answer: [最终英文提示词]
+
+工具名称列表（请原样使用）:
+- LyricsRetriever
+- MusicKnowledgeRetriever
+
+{agent_scratchpad}
     """),
     ("user", "{input}")
 ])
 
 # 创建React Agent
 agent = create_react_agent(llm, tools, agent_prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+
+# 严格限制思考次数为2次
+agent_executor = AgentExecutor(
+    agent=agent, 
+    tools=tools, 
+    verbose=True, 
+    handle_parsing_errors=True, 
+    max_iterations=2,  # 严格限制最多2次思考
+    early_stopping_method="generate"  # 达到限制时强制生成答案
+)
 
 @app.post("/generate-suno-prompt")
 async def generate_prompt(request: PromptRequest):
     try:
+        # 构建更简洁的用户查询
         user_query = (
-            f"用户请求: 创作一首{request.mood}情绪的{request.style}风格歌曲\n"
+            f"创作一首歌曲\n"
+            f"情绪: {request.mood}\n"
+            f"风格: {request.style}\n"
             f"语言: {request.language}\n"
             f"主题: {request.idea}\n"
-            "请生成符合SUNO AI要求的英文提示词"
+            "请生成符合SUNO AI要求的英文提示词（最多两次思考）"
         )
         
         # 使用Agent执行任务
         result = agent_executor.invoke({"input": user_query})
         
+        # 提取最终输出
+        final_output = result.get("output", "")
+        
+        # 检查是否达到限制
+        if "Agent stopped due to iteration limit" in final_output:
+            # 尝试提取最后一次思考内容
+            if result.get("intermediate_steps"):
+                last_step = result["intermediate_steps"][-1]
+                if isinstance(last_step[0], str):
+                    last_thought = last_step[0].split("Thought: ")[-1]
+                else:
+                    last_thought = last_step[0].log.split("Thought: ")[-1]
+                return {
+                    "input": user_query,
+                    "suno_prompt": last_thought,
+                    "warning": "达到思考次数限制，使用最后思考内容作为提示"
+                }
+            else:
+                # 直接生成提示词
+                direct_prompt = await generate_direct_prompt(request)
+                return {
+                    "input": user_query,
+                    "suno_prompt": direct_prompt,
+                    "warning": "达到思考次数限制且无中间步骤，使用直接生成方法"
+                }
+        
         return {
             "input": user_query,
-            "suno_prompt": result["output"],
+            "suno_prompt": final_output,
             "agent_steps": result.get("intermediate_steps", [])
         }
     except Exception as e:
         return {"error": str(e)}
+
+async def generate_direct_prompt(request: PromptRequest) -> str:
+    """当Agent失败时直接生成提示词的备用方法"""
+    try:
+        # 直接使用LLM生成提示词
+        prompt_template = f"""
+        用户请求: 创作一首{request.mood}情绪的{request.style}风格歌曲
+        语言: {request.language}
+        主题: {request.idea}
+        
+        请生成符合SUNO AI要求的英文提示词，包含:
+        - 情绪 (Mood)
+        - 节奏 (Tempo)
+        - 风格 (Genre/Style)
+        - 歌词主题 (Lyric Theme)
+        - 伴奏描述 (Instrumentation)
+        
+        示例格式: 
+        "Upbeat pop song with catchy melodies, about summer love. Energetic drums, bright synths. Lyrics: [阳光海滩的浪漫邂逅]"
+        """
+        
+        response = await llm.ainvoke(prompt_template)
+        return response.content
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 # 添加首页路由
 @app.get("/")
